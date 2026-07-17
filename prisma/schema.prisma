@@ -1,0 +1,338 @@
+// School Management Backend — Prisma schema
+// Translated from backend-design.md §2. Full schema ships in Milestone 1
+// (including notices/fees/payments/sms tables not yet used by any module)
+// so later milestones are additive code, not additive migrations.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum UserRole {
+  super_admin
+  school_admin
+  teacher
+  guardian
+
+  @@map("user_role")
+}
+
+enum AttendanceStatus {
+  present
+  absent
+  late
+  leave
+
+  @@map("attendance_status")
+}
+
+// ============ TENANT ============
+
+model School {
+  id        BigInt   @id @default(autoincrement())
+  name      String
+  address   String?
+  phone     String?
+  logoUrl   String?  @map("logo_url")
+  settings  Json     @default("{}")
+  isActive  Boolean  @default(true) @map("is_active")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  academicYears     AcademicYear[]
+  users             User[]
+  teachers          Teacher[]
+  classes           Class[]
+  sections          Section[]
+  students          Student[]
+  guardians         Guardian[]
+  enrollments       Enrollment[]
+  attendanceRecords AttendanceRecord[]
+  notices           Notice[]
+  feeStructures     FeeStructure[]
+  invoices          Invoice[]
+  payments          Payment[]
+  smsMessages       SmsMessage[]
+
+  @@map("schools")
+}
+
+model AcademicYear {
+  id        BigInt   @id @default(autoincrement())
+  schoolId  BigInt   @map("school_id")
+  name      String
+  startDate DateTime @map("start_date") @db.Date
+  endDate   DateTime @map("end_date") @db.Date
+  isCurrent Boolean  @default(false) @map("is_current")
+
+  school        School         @relation(fields: [schoolId], references: [id])
+  enrollments   Enrollment[]
+  feeStructures FeeStructure[]
+
+  @@unique([schoolId, name])
+  @@map("academic_years")
+}
+
+// ============ AUTH ============
+
+model User {
+  id           BigInt    @id @default(autoincrement())
+  schoolId     BigInt?   @map("school_id") // NULL only for super_admin
+  phone        String
+  passwordHash String?   @map("password_hash")
+  isActive     Boolean   @default(true) @map("is_active")
+  lastLoginAt  DateTime? @map("last_login_at")
+  createdAt    DateTime  @default(now()) @map("created_at")
+
+  school           School?              @relation(fields: [schoolId], references: [id])
+  roles            UserRoleAssignment[]
+  teacher          Teacher?
+  guardian         Guardian?
+  markedAttendance AttendanceRecord[]   @relation("AttendanceMarkedBy")
+  createdNotices   Notice[]             @relation("NoticeCreatedBy")
+  receivedPayments Payment[]            @relation("PaymentReceivedBy")
+
+  @@unique([schoolId, phone])
+  @@map("users")
+}
+
+model UserRoleAssignment {
+  userId BigInt   @map("user_id")
+  role   UserRole
+
+  user User @relation(fields: [userId], references: [id])
+
+  @@id([userId, role])
+  @@map("user_roles")
+}
+
+// ============ PEOPLE & STRUCTURE ============
+
+model Teacher {
+  id        BigInt    @id @default(autoincrement())
+  schoolId  BigInt    @map("school_id")
+  userId    BigInt?   @unique @map("user_id")
+  fullName  String    @map("full_name")
+  phone     String?
+  deletedAt DateTime? @map("deleted_at")
+
+  school                 School    @relation(fields: [schoolId], references: [id])
+  user                   User?     @relation(fields: [userId], references: [id])
+  sectionsAsClassTeacher Section[]
+
+  @@map("teachers")
+}
+
+model Class {
+  id        BigInt @id @default(autoincrement())
+  schoolId  BigInt @map("school_id")
+  name      String
+  sortOrder Int    @default(0) @map("sort_order")
+
+  school        School         @relation(fields: [schoolId], references: [id])
+  sections      Section[]
+  feeStructures FeeStructure[]
+  notices       Notice[]
+
+  @@unique([schoolId, name])
+  @@map("classes")
+}
+
+model Section {
+  id             BigInt  @id @default(autoincrement())
+  schoolId       BigInt  @map("school_id")
+  classId        BigInt  @map("class_id")
+  name           String
+  classTeacherId BigInt? @map("class_teacher_id")
+
+  school       School       @relation(fields: [schoolId], references: [id])
+  class        Class        @relation(fields: [classId], references: [id])
+  classTeacher Teacher?     @relation(fields: [classTeacherId], references: [id])
+  enrollments  Enrollment[]
+  notices      Notice[]
+
+  @@unique([classId, name])
+  @@map("sections")
+}
+
+model Student {
+  id        BigInt    @id @default(autoincrement())
+  schoolId  BigInt    @map("school_id")
+  fullName  String    @map("full_name")
+  dob       DateTime? @db.Date
+  gender    String?
+  photoUrl  String?   @map("photo_url")
+  deletedAt DateTime? @map("deleted_at")
+
+  school      School            @relation(fields: [schoolId], references: [id])
+  guardians   StudentGuardian[]
+  enrollments Enrollment[]
+
+  @@map("students")
+}
+
+model Guardian {
+  id       BigInt  @id @default(autoincrement())
+  schoolId BigInt  @map("school_id")
+  userId   BigInt? @unique @map("user_id")
+  fullName String  @map("full_name")
+  phone    String
+  relation String?
+
+  school   School            @relation(fields: [schoolId], references: [id])
+  user     User?             @relation(fields: [userId], references: [id])
+  students StudentGuardian[]
+
+  @@map("guardians")
+}
+
+model StudentGuardian {
+  studentId  BigInt  @map("student_id")
+  guardianId BigInt  @map("guardian_id")
+  isPrimary  Boolean @default(false) @map("is_primary")
+
+  student  Student  @relation(fields: [studentId], references: [id])
+  guardian Guardian @relation(fields: [guardianId], references: [id])
+
+  @@id([studentId, guardianId])
+  @@map("student_guardians")
+}
+
+// A student's place in a given year. Promotion = new enrollment row.
+model Enrollment {
+  id             BigInt    @id @default(autoincrement())
+  schoolId       BigInt    @map("school_id")
+  studentId      BigInt    @map("student_id")
+  academicYearId BigInt    @map("academic_year_id")
+  sectionId      BigInt    @map("section_id")
+  rollNo         Int?      @map("roll_no")
+  status         String    @default("active") // active/transferred/left
+  deletedAt      DateTime? @map("deleted_at")
+
+  school            School             @relation(fields: [schoolId], references: [id])
+  student           Student            @relation(fields: [studentId], references: [id])
+  academicYear      AcademicYear       @relation(fields: [academicYearId], references: [id])
+  section           Section            @relation(fields: [sectionId], references: [id])
+  attendanceRecords AttendanceRecord[]
+  invoices          Invoice[]
+
+  @@unique([studentId, academicYearId])
+  @@map("enrollments")
+}
+
+// ============ ATTENDANCE ============
+
+model AttendanceRecord {
+  id           BigInt           @id @default(autoincrement())
+  schoolId     BigInt           @map("school_id")
+  enrollmentId BigInt           @map("enrollment_id")
+  date         DateTime         @db.Date
+  status       AttendanceStatus
+  markedBy     BigInt           @map("marked_by")
+  markedAt     DateTime         @default(now()) @map("marked_at")
+
+  school     School     @relation(fields: [schoolId], references: [id])
+  enrollment Enrollment @relation(fields: [enrollmentId], references: [id])
+  marker     User       @relation("AttendanceMarkedBy", fields: [markedBy], references: [id])
+
+  @@unique([enrollmentId, date])
+  @@index([schoolId, date])
+  @@map("attendance_records")
+}
+
+// ============ NOTICES ============
+
+model Notice {
+  id        BigInt   @id @default(autoincrement())
+  schoolId  BigInt   @map("school_id")
+  title     String
+  body      String
+  audience  String // 'school' | 'class' | 'section'
+  sectionId BigInt?  @map("section_id")
+  classId   BigInt?  @map("class_id")
+  sendSms   Boolean  @default(false) @map("send_sms")
+  createdBy BigInt   @map("created_by")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  school  School   @relation(fields: [schoolId], references: [id])
+  section Section? @relation(fields: [sectionId], references: [id])
+  class   Class?   @relation(fields: [classId], references: [id])
+  creator User     @relation("NoticeCreatedBy", fields: [createdBy], references: [id])
+
+  @@map("notices")
+}
+
+// ============ FEES ============
+
+model FeeStructure {
+  id             BigInt  @id @default(autoincrement())
+  schoolId       BigInt  @map("school_id")
+  academicYearId BigInt  @map("academic_year_id")
+  classId        BigInt? @map("class_id") // NULL = whole school
+  name           String
+  amount         Decimal @db.Decimal(10, 2)
+  frequency      String // 'monthly' | 'one_time' | 'term'
+
+  school       School       @relation(fields: [schoolId], references: [id])
+  academicYear AcademicYear @relation(fields: [academicYearId], references: [id])
+  class        Class?       @relation(fields: [classId], references: [id])
+
+  @@map("fee_structures")
+}
+
+model Invoice {
+  id           BigInt   @id @default(autoincrement())
+  schoolId     BigInt   @map("school_id")
+  enrollmentId BigInt   @map("enrollment_id")
+  title        String
+  amount       Decimal  @db.Decimal(10, 2)
+  dueDate      DateTime @map("due_date") @db.Date
+  status       String   @default("unpaid") // unpaid/partial/paid/waived
+  createdAt    DateTime @default(now()) @map("created_at")
+
+  school     School     @relation(fields: [schoolId], references: [id])
+  enrollment Enrollment @relation(fields: [enrollmentId], references: [id])
+  payments   Payment[]
+
+  @@index([schoolId, status, dueDate])
+  @@map("invoices")
+}
+
+model Payment {
+  id         BigInt    @id @default(autoincrement())
+  schoolId   BigInt    @map("school_id")
+  invoiceId  BigInt    @map("invoice_id")
+  amount     Decimal   @db.Decimal(10, 2)
+  method     String // 'esewa' | 'khalti' | 'cash'
+  gatewayRef String?   @map("gateway_ref")
+  status     String    @default("pending") // pending/verified/failed
+  paidAt     DateTime? @map("paid_at")
+  receivedBy BigInt?   @map("received_by")
+  createdAt  DateTime  @default(now()) @map("created_at")
+
+  school   School  @relation(fields: [schoolId], references: [id])
+  invoice  Invoice @relation(fields: [invoiceId], references: [id])
+  receiver User?   @relation("PaymentReceivedBy", fields: [receivedBy], references: [id])
+
+  @@map("payments")
+}
+
+// ============ SMS LOG ============
+
+model SmsMessage {
+  id         BigInt   @id @default(autoincrement())
+  schoolId   BigInt   @map("school_id")
+  phone      String
+  body       String
+  purpose    String // 'absence' | 'notice' | 'fee_reminder' | 'otp'
+  status     String   @default("queued") // queued/sent/failed
+  gatewayRef String?  @map("gateway_ref")
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  school School @relation(fields: [schoolId], references: [id])
+
+  @@map("sms_messages")
+}
