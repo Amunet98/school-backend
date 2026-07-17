@@ -62,7 +62,18 @@ export class SmsService {
       }
 
       const jobPayload = JSON.stringify({ smsMessageId: row.id.toString() });
-      await tx.$queryRaw`SELECT graphile_worker.add_job('send_sms', ${jobPayload}::json, max_attempts => ${SEND_SMS_MAX_ATTEMPTS})`;
+      // max_attempts must be cast explicitly: Prisma's raw-query parameter
+      // binding infers a plain JS number as bigint over the wire, but the
+      // graphile_worker.add_job SQL function's max_attempts parameter is
+      // `integer` — without the cast Postgres reports no matching overload
+      // (42883). $executeRaw (not $queryRaw) because add_job() returns a
+      // composite graphile_worker._private_jobs row that Prisma's raw
+      // query result mapper can't deserialize (it's an internal type, not
+      // one Prisma has a mapping for) — we don't need the return value
+      // anyway, only the side effect of scheduling the job, and
+      // $executeRaw reports rows-affected without attempting to map
+      // result columns.
+      await tx.$executeRaw`SELECT graphile_worker.add_job('send_sms', ${jobPayload}::json, max_attempts => ${SEND_SMS_MAX_ATTEMPTS}::int)`;
 
       return row;
     });

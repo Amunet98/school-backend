@@ -1,9 +1,39 @@
 import { INestApplication } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
+import { PrismaClient } from '@prisma/client';
 import request from 'supertest';
 import { App } from 'supertest/types';
 import { AppModule } from '../src/app.module';
 import { configureApp } from '../src/bootstrap';
+
+const dbPrisma = new PrismaClient();
+
+async function pollSmsSent(
+  dedupKeyOrPhoneAndPurpose: {
+    dedupKey?: string;
+    phone?: string;
+    purpose?: string;
+  },
+  timeoutMs = 8000,
+): Promise<{ id: bigint; status: string; gatewayRef: string | null } | null> {
+  const start = Date.now();
+  while (Date.now() - start < timeoutMs) {
+    const row = dedupKeyOrPhoneAndPurpose.dedupKey
+      ? await dbPrisma.smsMessage.findUnique({
+          where: { dedupKey: dedupKeyOrPhoneAndPurpose.dedupKey },
+        })
+      : await dbPrisma.smsMessage.findFirst({
+          where: {
+            phone: dedupKeyOrPhoneAndPurpose.phone,
+            purpose: dedupKeyOrPhoneAndPurpose.purpose,
+          },
+          orderBy: { createdAt: 'desc' },
+        });
+    if (row && row.status === 'sent') return row;
+    await new Promise((resolve) => setTimeout(resolve, 250));
+  }
+  return null;
+}
 
 const SCHOOL_A_ADMIN = { phone: '9800000001', password: 'Admin@12345' };
 const SCHOOL_A_TEACHER_GUARDIAN = {
@@ -47,6 +77,7 @@ describe('School Backend (e2e)', () => {
 
   afterAll(async () => {
     await app.close();
+    await dbPrisma.$disconnect();
   });
 
   it('rejects unauthenticated requests', async () => {
@@ -341,5 +372,179 @@ describe('School Backend (e2e)', () => {
         ],
       })
       .expect(403); // school_admin role isn't `teacher` at all
+  });
+
+  describe('SMS milestone: absence alerts + OTP through the queue', () => {
+    let absentEnrollmentId1: string;
+    let absentEnrollmentId2: string;
+    let lateOnlyEnrollmentId: string;
+    let dedupKey1: string;
+    let dedupKey2: string;
+    let dedupKeyLate: string;
+
+    async function admitSectionAStudent(
+      fullName: string,
+      guardianPhone: string,
+      rollNo: number,
+    ): Promise<string> {
+      const res = await request(server)
+        .post('/api/v1/students')
+        .set('Authorization', `Bearer ${adminToken}`)
+        .send({
+          full_name: fullName,
+          gender: 'male',
+          guardians: [
+            {
+              full_name: `${fullName} Guardian`,
+              phone: guardianPhone,
+              relation: 'father',
+              is_primary: true,
+            },
+          ],
+          enrollment: {
+            academic_year_id: Number(yearId),
+            section_id: Number(sectionAId),
+            roll_no: rollNo,
+          },
+        })
+        .expect(201);
+      return res.body.enrollments[0].id as string;
+    }
+
+    it('admits three fresh section A students for the SMS tests', async () => {
+      absentEnrollmentId1 = await admitSectionAStudent(
+        'SMS Test Absent One',
+        '9844440001',
+        60,
+      );
+      absentEnrollmentId2 = await admitSectionAStudent(
+        'SMS Test Absent Two',
+        '9844440002',
+        61,
+      );
+      lateOnlyEnrollmentId = await admitSectionAStudent(
+        'SMS Test Late Only',
+        '9844440003',
+        62,
+      );
+
+      const today = todayIso();
+      dedupKey1 = `absence:${absentEnrollmentId1}:${today}`;
+      dedupKey2 = `absence:${absentEnrollmentId2}:${today}`;
+      dedupKeyLate = `absence:${lateOnlyEnrollmentId}:${today}`;
+    });
+
+    it('marking 2 absent + 1 late creates exactly 2 absence sms_messages rows, both reaching sent', async () => {
+      await request(server)
+        .post(`/api/v1/sections/${sectionAId}/attendance`)
+        .set('Authorization', `Bearer ${teacherToken}`)
+        .send({
+          date: todayIso(),
+          records: [
+            { enrollment_id: Number(absentEnrollmentId1), status: 'absent' },
+            { enrollment_id: Number(absentEnrollmentId2), status: 'absent' },
+            { enrollment_id: Number(lateOnlyEnrollmentId), status: 'late' },
+          ],
+        })
+        .expect(201);
+
+      const sent1 = await pollSmsSent({ dedupKey: dedupKey1 });
+      const sent2 = await pollSmsSent({ dedupKey: dedupKey2 });
+      expect(sent1).not.toBeNull();
+      expect(sent2).not.toBeNull();
+      expect(sent1?.status).toBe('sent');
+      expect(sent2?.status).toBe('sent');
+
+      // late-only enrollment: no sms_messages row at all (not just "not sent").
+      const lateRow = await dbPrisma.smsMessage.findUnique({
+        where: { dedupKey: dedupKeyLate },
+      });
+      expect(lateRow).toBeNull();
+
+      const absenceRows = await dbPrisma.smsMessage.findMany({
+        where: { dedupKey: { in: [dedupKey1, dedupKey2] } },
+      });
+      expect(absenceRows).toHaveLength(2);
+    });
+
+    it('re-posting the same absent attendance does not create duplicate sms_messages rows', async () => {
+      await request(server)
+        .post(`/api/v1/sections/${sectionAId}/attendance`)
+        .set('Authorization', `Bearer ${teacherToken}`)
+        .send({
+          date: todayIso(),
+          records: [
+            { enrollment_id: Number(absentEnrollmentId1), status: 'absent' },
+            { enrollment_id: Number(absentEnrollmentId2), status: 'absent' },
+          ],
+        })
+        .expect(201);
+
+      // Give the (no-op) enqueue attempt a moment, then assert the count
+      // is still exactly 2 — the dedup_key unique index rejects the
+      // second insert for each enrollment.
+      await new Promise((resolve) => setTimeout(resolve, 500));
+      const absenceRows = await dbPrisma.smsMessage.findMany({
+        where: { dedupKey: { in: [dedupKey1, dedupKey2] } },
+      });
+      expect(absenceRows).toHaveLength(2);
+    });
+
+    it('a school with settings.sms_enabled=false gets no absence SMS (restored after)', async () => {
+      const school = await dbPrisma.school.findFirstOrThrow({
+        where: { name: 'Sunrise Secondary School' },
+      });
+      const originalSettings = school.settings;
+
+      try {
+        await dbPrisma.school.update({
+          where: { id: school.id },
+          data: { settings: { sms_enabled: false } },
+        });
+
+        const toggledEnrollmentId = await admitSectionAStudent(
+          'SMS Test Toggled Off',
+          '9844440004',
+          63,
+        );
+        const dedupKeyToggled = `absence:${toggledEnrollmentId}:${todayIso()}`;
+
+        await request(server)
+          .post(`/api/v1/sections/${sectionAId}/attendance`)
+          .set('Authorization', `Bearer ${teacherToken}`)
+          .send({
+            date: todayIso(),
+            records: [
+              { enrollment_id: Number(toggledEnrollmentId), status: 'absent' },
+            ],
+          })
+          .expect(201);
+
+        await new Promise((resolve) => setTimeout(resolve, 500));
+        const row = await dbPrisma.smsMessage.findUnique({
+          where: { dedupKey: dedupKeyToggled },
+        });
+        expect(row).toBeNull();
+      } finally {
+        await dbPrisma.school.update({
+          where: { id: school.id },
+          data: { settings: originalSettings ?? {} },
+        });
+      }
+    });
+
+    it('OTP request routes through the queue and reaches sent', async () => {
+      await request(server)
+        .post('/api/v1/auth/otp/request')
+        .send({ phone: SCHOOL_A_TEACHER_GUARDIAN.phone })
+        .expect(200);
+
+      const otpRow = await pollSmsSent({
+        phone: SCHOOL_A_TEACHER_GUARDIAN.phone,
+        purpose: 'otp',
+      });
+      expect(otpRow).not.toBeNull();
+      expect(otpRow?.status).toBe('sent');
+    });
   });
 });

@@ -6,15 +6,15 @@ import { SmsService } from './sms.service';
 describe('SmsService', () => {
   let service: SmsService;
   let smsMessageCreate: jest.Mock;
-  let queryRaw: jest.Mock;
+  let executeRaw: jest.Mock;
 
   beforeEach(async () => {
     smsMessageCreate = jest.fn();
-    queryRaw = jest.fn().mockResolvedValue(undefined);
+    executeRaw = jest.fn().mockResolvedValue(1);
 
     const tx = {
       smsMessage: { create: smsMessageCreate },
-      $queryRaw: queryRaw,
+      $executeRaw: executeRaw,
     };
 
     const prismaMock = {
@@ -59,7 +59,7 @@ describe('SmsService', () => {
         dedupKey: null,
       },
     });
-    expect(queryRaw).toHaveBeenCalledTimes(1);
+    expect(executeRaw).toHaveBeenCalledTimes(1);
   });
 
   it('returns null and never enqueues a job when dedup_key collides (P2002)', async () => {
@@ -79,7 +79,7 @@ describe('SmsService', () => {
     });
 
     expect(row).toBeNull();
-    expect(queryRaw).not.toHaveBeenCalled();
+    expect(executeRaw).not.toHaveBeenCalled();
   });
 
   it('rethrows non-P2002 errors from the insert', async () => {
@@ -93,6 +93,6 @@ describe('SmsService', () => {
         purpose: 'otp',
       }),
     ).rejects.toThrow('connection lost');
-    expect(queryRaw).not.toHaveBeenCalled();
+    expect(executeRaw).not.toHaveBeenCalled();
   });
 });
