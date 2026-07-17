@@ -1,7 +1,8 @@
 # school-backend
 
-School management backend (Milestone 1: foundation → attendance) for Nepali
-schools. Independent git repo, not part of the outer portfolio repo.
+School management backend for Nepali schools. Independent git repo, not
+part of the outer portfolio repo. Milestone 1 (foundation → attendance) and
+the SMS milestone (queue + absence alerts) are both implemented.
 
 ## Stack
 
@@ -9,13 +10,15 @@ schools. Independent git repo, not part of the outer portfolio repo.
 - Prisma 6 + PostgreSQL 16 (via Docker Compose)
 - JWT auth (access + refresh, HS256), argon2 password hashing
 - `nepali-date-converter` for AD↔BS date display
+- graphile-worker (Postgres-based job queue, embedded in the API process)
+  for SMS delivery
 - Jest + Supertest for e2e
 
 ## Commands
 
 ```bash
 docker compose up -d              # start Postgres (host port 5433, NOT 5432 — already in use locally)
-npx prisma migrate dev            # apply schema (already applied; use `migrate dev` again after schema.prisma changes)
+npx prisma migrate dev            # apply schema (interactive; a human runs this locally after schema.prisma changes)
 npm run seed                      # prisma/seed.ts — school A (full roster) + school B (tenant-isolation fixture)
 npm run start:dev                 # start the API on :3000 (prefix /api/v1)
 npm run build                     # nest build
@@ -25,7 +28,8 @@ npm run test:e2e                  # e2e suite (auto-resets + reseeds the two fix
 ```
 
 `.env` (gitignored) holds `DATABASE_URL`, `JWT_ACCESS_SECRET`,
-`JWT_REFRESH_SECRET`, expiry windows, `PORT`. Copy `.env.example` to start.
+`JWT_REFRESH_SECRET`, expiry windows, `PORT`, `SPARROW_TOKEN`,
+`SPARROW_IDENTITY`. Copy `.env.example` to start.
 
 ## Tenant-scoping rule
 
@@ -67,13 +71,32 @@ so tests can prove school A data is invisible to it)
 
 `npm run test:e2e` runs `test/global-setup.js` first, which deletes only
 the rows belonging to the two named fixture schools above (in FK-safe
-order, via Prisma Client — **not** `prisma migrate reset`) and re-runs
-`prisma/seed.ts`. This keeps re-runs deterministic without touching
-anything outside this suite's own fixtures or requiring destructive
-whole-database commands. Do not swap this back to `prisma migrate reset`
-without a human explicitly present — Prisma's CLI refuses that command
-when it detects an AI agent, precisely because it's irreversible; the
-targeted-delete approach here gets the same determinism without that risk.
+order, via Prisma Client — **not** `prisma migrate reset`, and including
+`sms_messages` for those schools) and re-runs `prisma/seed.ts`. This keeps
+re-runs deterministic without touching anything outside this suite's own
+fixtures or requiring destructive whole-database commands. Do not swap
+this back to `prisma migrate reset` without a human explicitly present —
+Prisma's CLI refuses that command when it detects an AI agent, precisely
+because it's irreversible; the targeted-delete approach here gets the
+same determinism without that risk.
+
+The embedded graphile-worker runner starts inside the e2e test's own Nest
+app instance (`Test.createTestingModule` in `school.e2e-spec.ts`), so
+`send_sms` jobs enqueued during a test run are actually processed by that
+same process — e2e SMS assertions poll `sms_messages.status` until it
+reaches `'sent'` rather than asserting on it immediately. The fixture
+cleanup above never touches the `graphile_worker` schema itself (its
+tables are worker-owned infrastructure, not per-fixture data) — only the
+`sms_messages` rows created during the run.
+
+`prisma migrate dev` also refuses to run non-interactively for an agent
+(same class of guard rail as `migrate reset`). The safe non-interactive
+path used for additive migrations in this repo: generate the diff SQL
+with `prisma migrate diff --from-url "$DATABASE_URL" --to-schema-datamodel prisma/schema.prisma --script`,
+hand-place it under `prisma/migrations/<timestamp>_<name>/migration.sql`,
+then apply with `npx prisma migrate deploy` (which is designed for
+exactly this — non-interactive, no destructive-change prompts, just
+applies pending migration files).
 
 ## Notable implementation choices
 
@@ -86,18 +109,56 @@ targeted-delete approach here gets the same determinism without that risk.
   `$executeRaw` (`src/attendance/attendance.service.ts`). Re-posting for
   the same date corrects in place — no duplicate rows.
 - **Absence events**: marking `absent`/`late`/`leave` emits an in-process
-  event (`@nestjs/event-emitter`); `AbsenceListener` just logs for now.
-  The SMS milestone will attach a real notifier to the same event.
-- **SMS**: `SmsGateway` interface + `ConsoleSmsGateway` stub (logs to
-  console, records to `sms_messages` when a school is known). Used today
-  only by the OTP flow. Swap the DI binding in `auth.module.ts` when a
-  real provider (e.g. Sparrow SMS) is ready.
+  event (`@nestjs/event-emitter`); `AbsenceListener`
+  (`src/attendance/listeners/absence.listener.ts`) reacts to it. Only
+  `absent` triggers a guardian SMS — `late`/`leave` just log, staying
+  app-only (a scope decision, not a limitation). The listener is fully
+  decoupled from the attendance POST (fire-and-forget event + its own
+  try/catch around everything) so an SMS failure can never break
+  attendance marking.
+- **SMS (`src/sms/`)**: `SmsGateway` is delivery-only —
+  `deliver(phone, body) -> { gatewayRef? }`. `SmsService.enqueue` owns
+  persistence: inside one DB transaction it inserts an `sms_messages` row
+  (`status: 'queued'`) and schedules a `send_sms` graphile-worker job, so
+  the row and the job can never diverge. `SmsQueueService` runs an
+  **embedded** graphile-worker instance inside the API process
+  (`concurrency: 2`, `run()` from the `graphile-worker` package) against
+  the *same* Postgres database — no separate worker process, no Redis.
+  graphile-worker manages its own `graphile_worker` schema in that
+  database; treat it as owned infrastructure, not application data (don't
+  drop it, don't include it in fixture cleanup beyond incidentally
+  processing/consuming jobs).
+  - **Dedup**: `sms_messages.dedup_key` is a nullable column with a
+    unique index. Absence alerts use
+    `absence:<enrollmentId>:<YYYY-MM-DD>` so re-submitting/correcting
+    attendance for the same date can never double-send — the second
+    `enqueue` call hits the unique-index collision (Prisma `P2002`) and
+    `enqueue` returns `null` silently. Known accepted edge case: absent
+    -> corrected to present -> re-marked absent the same day sends only
+    the *first* SMS, because both attempts share the same dedup key.
+  - **Provider**: env-gated. `SmsModule`'s provider factory picks
+    `SparrowSmsGateway` when `SPARROW_TOKEN` is set, otherwise
+    `ConsoleSmsGateway` (logs instead of sending). No real Sparrow
+    credentials exist yet — activation later is just setting
+    `SPARROW_TOKEN`/`SPARROW_IDENTITY` in `.env`, no code change.
+  - **Locale**: templates (`src/sms/sms-templates.ts`) are chosen by
+    `school.settings.locale` — `'ne'` (default, when absent/unknown) or
+    `'en'`. BS dates in templates go through `toBs()`
+    (`src/common/date/bs-date.util.ts`) — same single-source rule as
+    everywhere else.
+  - **Per-school opt-out**: `school.settings.sms_enabled === false` skips
+    absence SMS for that school entirely (default: enabled).
 - **OTP**: codes are generated in-memory (`OtpService`, 5 min TTL, single
-  process — fine for MVP) and delivered through `SmsGateway`. Login-by-OTP
-  assumes a phone maps to one account; if a phone is reused across
-  schools (schema allows it — `users` is unique on `(school_id, phone)`,
-  not `phone` alone), only password login (which tries every matching
-  candidate and checks the hash) disambiguates correctly.
+  process — fine for MVP) and requests are routed through
+  `SmsService.enqueue` (purpose `'otp'`, no dedup key) like any other SMS
+  — *except* for a null-`school_id` user (only ever `super_admin`):
+  `sms_messages.school_id` is `NOT NULL`, so that case bypasses the queue
+  entirely and calls `SMS_GATEWAY.deliver()` directly (see
+  `auth.service.ts#requestOtp`). Login-by-OTP assumes a phone maps to one
+  account; if a phone is reused across schools (schema allows it —
+  `users` is unique on `(school_id, phone)`, not `phone` alone), only
+  password login (which tries every matching candidate and checks the
+  hash) disambiguates correctly.
 - **Full schema up front**: `prisma/schema.prisma` includes tables not
   used until later milestones (notices, fee_structures, invoices,
   payments, sms_messages) so those milestones are additive code, not

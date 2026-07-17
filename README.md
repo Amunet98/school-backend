@@ -1,11 +1,14 @@
 # School Backend
 
 A multi-tenant school-management API for Nepali schools — attendance,
-students, guardians, enrollments today; notices, fees, and SMS in later
-milestones. Built with NestJS, Prisma, and PostgreSQL.
+students, guardians, enrollments, and SMS alerts today; notices and fees
+in later milestones. Built with NestJS, Prisma, PostgreSQL, and an
+embedded graphile-worker queue.
 
-This is Milestone 1: scaffold, complete schema, auth + tenant scoping,
-academics/students (incl. CSV import), and attendance.
+Milestone 1 (scaffold, complete schema, auth + tenant scoping,
+academics/students incl. CSV import, attendance) and the SMS milestone
+(queue, absence alerts to guardians, OTP through the queue) are both
+implemented.
 
 See [`CLAUDE.md`](./CLAUDE.md) for the full breakdown of commands, seed
 credentials, and implementation notes (tenant-scoping rule, BS dates,
@@ -52,6 +55,8 @@ GET  /api/v1/my/children                 (guardian)
 GET  /api/v1/children/:id/attendance?month=
 ```
 
-Notices, fee structures, invoices/payments, and SMS delivery are modeled
-in the database already (so later milestones are additive code, not
-migrations) but have no endpoints yet.
+Marking a student `absent` (not `late`/`leave`) enqueues an SMS to their
+primary guardian via an embedded graphile-worker queue (`src/sms/`) — see
+`CLAUDE.md` for the dedup/locale/opt-out rules. No endpoints for notices,
+fee structures, or invoices/payments yet — those tables are modeled in the
+database already (so those milestones are additive code, not migrations).
