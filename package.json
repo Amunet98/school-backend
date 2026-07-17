@@ -36,6 +36,7 @@
     "class-transformer": "^0.5.1",
     "class-validator": "^0.15.1",
     "csv-parse": "^7.0.1",
+    "graphile-worker": "^0.17.3",
     "multer": "^2.2.0",
     "nepali-date-converter": "^3.4.0",
     "passport": "^0.7.0",

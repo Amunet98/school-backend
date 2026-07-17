@@ -330,6 +330,12 @@ model SmsMessage {
   purpose    String // 'absence' | 'notice' | 'fee_reminder' | 'otp'
   status     String   @default("queued") // queued/sent/failed
   gatewayRef String?  @map("gateway_ref")
+  // Nullable + unique index: absence alerts set this to
+  // `absence:<enrollmentId>:<YYYY-MM-DD>` so re-submitting attendance
+  // corrections can never double-send (DB constraint kills concurrent
+  // duplicates too); other purposes (otp, notice, fee_reminder) leave it
+  // null, and Postgres unique indexes allow unlimited NULLs.
+  dedupKey   String?  @unique @map("dedup_key")
   createdAt  DateTime @default(now()) @map("created_at")
 
   school School @relation(fields: [schoolId], references: [id])
