@@ -1,0 +1,22 @@
+services:
+  postgres:
+    image: postgres:16
+    container_name: school-backend-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: school
+      POSTGRES_PASSWORD: school
+      POSTGRES_DB: school_backend
+    ports:
+      # host port 5433 -> container 5432 (host 5432 is already occupied by another local Postgres)
+      - '5433:5432'
+    volumes:
+      - school_backend_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U school -d school_backend']
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  school_backend_pgdata:
