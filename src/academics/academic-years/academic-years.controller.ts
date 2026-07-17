@@ -16,7 +16,10 @@ export class AcademicYearsController {
   }
 
   @Post()
-  create(@CurrentUser() user: AuthenticatedUser, @Body() dto: CreateAcademicYearDto) {
+  create(
+    @CurrentUser() user: AuthenticatedUser,
+    @Body() dto: CreateAcademicYearDto,
+  ) {
     return this.academicYearsService.create(user.schoolId!, dto);
   }
 }

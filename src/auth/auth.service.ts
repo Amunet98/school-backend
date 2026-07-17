@@ -98,7 +98,12 @@ export class AuthService {
     const user = candidates[0];
 
     const code = this.otp.generate(user.id);
-    await this.smsGateway.send(user.schoolId, phone, `Your login code is ${code}`, 'otp');
+    await this.smsGateway.send(
+      user.schoolId,
+      phone,
+      `Your login code is ${code}`,
+      'otp',
+    );
   }
 
   async verifyOtp(phone: string, code: string): Promise<AuthTokens> {
@@ -134,20 +139,14 @@ export class AuthService {
     };
 
     const [access_token, refresh_token] = await Promise.all([
-      this.jwt.signAsync(
-        { ...accessPayload },
-        {
-          secret: this.config.get<string>('JWT_ACCESS_SECRET'),
-          expiresIn: this.config.get<string>('JWT_ACCESS_EXPIRES_IN'),
-        } as JwtSignOptions,
-      ),
-      this.jwt.signAsync(
-        { ...refreshPayload },
-        {
-          secret: this.config.get<string>('JWT_REFRESH_SECRET'),
-          expiresIn: this.config.get<string>('JWT_REFRESH_EXPIRES_IN'),
-        } as JwtSignOptions,
-      ),
+      this.jwt.signAsync({ ...accessPayload }, {
+        secret: this.config.get<string>('JWT_ACCESS_SECRET'),
+        expiresIn: this.config.get<string>('JWT_ACCESS_EXPIRES_IN'),
+      } as JwtSignOptions),
+      this.jwt.signAsync({ ...refreshPayload }, {
+        secret: this.config.get<string>('JWT_REFRESH_SECRET'),
+        expiresIn: this.config.get<string>('JWT_REFRESH_EXPIRES_IN'),
+      } as JwtSignOptions),
     ]);
 
     await this.prisma.user.update({

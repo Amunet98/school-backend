@@ -1,9 +1,17 @@
-import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ForbiddenException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { EventEmitter2 } from '@nestjs/event-emitter';
 import { Prisma } from '@prisma/client';
 import { toBs } from '../common/date/bs-date.util';
 import { PrismaService } from '../common/prisma/prisma.service';
-import { AbsenceMarkedEvent, ABSENCE_MARKED_EVENT } from './events/absence-marked.event';
+import {
+  AbsenceMarkedEvent,
+  ABSENCE_MARKED_EVENT,
+} from './events/absence-marked.event';
 import { MarkAttendanceDto } from './dto/mark-attendance.dto';
 
 function toDateOnly(isoDateString: string): Date {
@@ -21,7 +29,9 @@ export class AttendanceService {
   ) {}
 
   async getMySections(schoolId: bigint, userId: bigint) {
-    const teacher = await this.prisma.teacher.findFirst({ where: { schoolId, userId } });
+    const teacher = await this.prisma.teacher.findFirst({
+      where: { schoolId, userId },
+    });
     if (!teacher) return [];
 
     return this.prisma.section.findMany({
@@ -30,10 +40,19 @@ export class AttendanceService {
     });
   }
 
-  async getSectionStudents(schoolId: bigint, sectionId: bigint, dateStr: string) {
-    if (!dateStr) throw new BadRequestException('date query param is required (YYYY-MM-DD)');
+  async getSectionStudents(
+    schoolId: bigint,
+    sectionId: bigint,
+    dateStr: string,
+  ) {
+    if (!dateStr)
+      throw new BadRequestException(
+        'date query param is required (YYYY-MM-DD)',
+      );
 
-    const section = await this.prisma.section.findFirst({ where: { id: sectionId, schoolId } });
+    const section = await this.prisma.section.findFirst({
+      where: { id: sectionId, schoolId },
+    });
     if (!section) throw new NotFoundException('Section not found');
 
     const date = toDateOnly(dateStr);
@@ -60,12 +79,22 @@ export class AttendanceService {
     };
   }
 
-  private async assertOwnsSectionAsClassTeacher(schoolId: bigint, userId: bigint, sectionId: bigint) {
-    const teacher = await this.prisma.teacher.findFirst({ where: { schoolId, userId } });
-    const section = await this.prisma.section.findFirst({ where: { id: sectionId, schoolId } });
+  private async assertOwnsSectionAsClassTeacher(
+    schoolId: bigint,
+    userId: bigint,
+    sectionId: bigint,
+  ) {
+    const teacher = await this.prisma.teacher.findFirst({
+      where: { schoolId, userId },
+    });
+    const section = await this.prisma.section.findFirst({
+      where: { id: sectionId, schoolId },
+    });
     if (!section) throw new NotFoundException('Section not found');
     if (!teacher || section.classTeacherId !== teacher.id) {
-      throw new ForbiddenException('You are not the class teacher for this section');
+      throw new ForbiddenException(
+        'You are not the class teacher for this section',
+      );
     }
     return section;
   }
@@ -95,8 +124,11 @@ export class AttendanceService {
       );
     }
 
-    const marker = await this.prisma.user.findFirst({ where: { id: userId, schoolId } });
-    if (!marker) throw new ForbiddenException('Marker not found in this school');
+    const marker = await this.prisma.user.findFirst({
+      where: { id: userId, schoolId },
+    });
+    if (!marker)
+      throw new ForbiddenException('Marker not found in this school');
 
     const date = toDateOnly(dto.date);
 
@@ -113,10 +145,20 @@ export class AttendanceService {
     `;
 
     for (const r of dto.records) {
-      if (r.status === 'absent' || r.status === 'late' || r.status === 'leave') {
+      if (
+        r.status === 'absent' ||
+        r.status === 'late' ||
+        r.status === 'leave'
+      ) {
         this.events.emit(
           ABSENCE_MARKED_EVENT,
-          new AbsenceMarkedEvent(schoolId, BigInt(r.enrollment_id), date, r.status, userId),
+          new AbsenceMarkedEvent(
+            schoolId,
+            BigInt(r.enrollment_id),
+            date,
+            r.status,
+            userId,
+          ),
         );
       }
     }
@@ -125,7 +167,9 @@ export class AttendanceService {
   }
 
   async getMyChildren(schoolId: bigint, userId: bigint) {
-    const guardian = await this.prisma.guardian.findFirst({ where: { schoolId, userId } });
+    const guardian = await this.prisma.guardian.findFirst({
+      where: { schoolId, userId },
+    });
     if (!guardian) return [];
 
     const links = await this.prisma.studentGuardian.findMany({
@@ -143,7 +187,9 @@ export class AttendanceService {
     });
 
     return links
-      .filter((l) => l.student.schoolId === schoolId && l.student.deletedAt === null)
+      .filter(
+        (l) => l.student.schoolId === schoolId && l.student.deletedAt === null,
+      )
       .map((l) => ({
         student_id: l.student.id.toString(),
         full_name: l.student.fullName,
@@ -158,14 +204,24 @@ export class AttendanceService {
       }));
   }
 
-  async getChildAttendance(schoolId: bigint, userId: bigint, studentId: bigint, month: string) {
-    const guardian = await this.prisma.guardian.findFirst({ where: { schoolId, userId } });
+  async getChildAttendance(
+    schoolId: bigint,
+    userId: bigint,
+    studentId: bigint,
+    month: string,
+  ) {
+    const guardian = await this.prisma.guardian.findFirst({
+      where: { schoolId, userId },
+    });
     if (!guardian) throw new ForbiddenException('Not a guardian');
 
     const link = await this.prisma.studentGuardian.findFirst({
       where: { guardianId: guardian.id, studentId },
     });
-    if (!link) throw new ForbiddenException('This student is not linked to your account');
+    if (!link)
+      throw new ForbiddenException(
+        'This student is not linked to your account',
+      );
 
     // month = "YYYY-MM" (AD)
     const [yearStr, monthStr] = month.split('-');

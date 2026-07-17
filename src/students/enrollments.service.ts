@@ -18,18 +18,36 @@ export class EnrollmentsService {
    */
   async promote(schoolId: bigint, dto: PromoteDto): Promise<PromoteResult> {
     const [fromSection, toSection, toYear] = await Promise.all([
-      this.prisma.section.findFirst({ where: { id: BigInt(dto.from_section_id), schoolId } }),
-      this.prisma.section.findFirst({ where: { id: BigInt(dto.to_section_id), schoolId } }),
+      this.prisma.section.findFirst({
+        where: { id: BigInt(dto.from_section_id), schoolId },
+      }),
+      this.prisma.section.findFirst({
+        where: { id: BigInt(dto.to_section_id), schoolId },
+      }),
       this.prisma.academicYear.findFirst({
         where: { id: BigInt(dto.to_academic_year_id), schoolId },
       }),
     ]);
-    if (!fromSection) throw new BadRequestException('from_section_id does not belong to this school');
-    if (!toSection) throw new BadRequestException('to_section_id does not belong to this school');
-    if (!toYear) throw new BadRequestException('to_academic_year_id does not belong to this school');
+    if (!fromSection)
+      throw new BadRequestException(
+        'from_section_id does not belong to this school',
+      );
+    if (!toSection)
+      throw new BadRequestException(
+        'to_section_id does not belong to this school',
+      );
+    if (!toYear)
+      throw new BadRequestException(
+        'to_academic_year_id does not belong to this school',
+      );
 
     const activeEnrollments = await this.prisma.enrollment.findMany({
-      where: { schoolId, sectionId: BigInt(dto.from_section_id), status: 'active', deletedAt: null },
+      where: {
+        schoolId,
+        sectionId: BigInt(dto.from_section_id),
+        status: 'active',
+        deletedAt: null,
+      },
     });
 
     const result: PromoteResult = { promoted: 0, skipped: [] };

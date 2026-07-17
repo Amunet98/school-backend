@@ -32,4 +32,17 @@ export default tseslint.config(
       "prettier/prettier": ["error", { endOfLine: "auto" }],
     },
   },
+  {
+    // supertest responses (`.body`) are untyped by design; asserting on
+    // them in e2e specs is inherently `any`-typed. Relax the strict
+    // type-checked rules here rather than hand-typing every response.
+    files: ['test/**/*.ts'],
+    rules: {
+      '@typescript-eslint/no-unsafe-member-access': 'off',
+      '@typescript-eslint/no-unsafe-assignment': 'off',
+      '@typescript-eslint/no-unsafe-call': 'off',
+      '@typescript-eslint/no-unsafe-return': 'off',
+      '@typescript-eslint/no-unsafe-argument': 'off',
+    },
+  },
 );

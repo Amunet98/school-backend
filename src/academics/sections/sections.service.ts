@@ -1,4 +1,8 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { CreateSectionDto } from './dto/create-section.dto';
 
@@ -29,7 +33,9 @@ export class SectionsService {
         where: { id: BigInt(dto.class_teacher_id), schoolId },
       });
       if (!teacher) {
-        throw new BadRequestException('class_teacher_id does not belong to this school');
+        throw new BadRequestException(
+          'class_teacher_id does not belong to this school',
+        );
       }
     }
 
@@ -38,7 +44,9 @@ export class SectionsService {
         schoolId,
         classId: BigInt(dto.class_id),
         name: dto.name,
-        classTeacherId: dto.class_teacher_id ? BigInt(dto.class_teacher_id) : undefined,
+        classTeacherId: dto.class_teacher_id
+          ? BigInt(dto.class_teacher_id)
+          : undefined,
       },
     });
   }

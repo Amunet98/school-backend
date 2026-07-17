@@ -1,4 +1,10 @@
-import { IsBoolean, IsDateString, IsNotEmpty, IsOptional, IsString } from 'class-validator';
+import {
+  IsBoolean,
+  IsDateString,
+  IsNotEmpty,
+  IsOptional,
+  IsString,
+} from 'class-validator';
 
 export class CreateAcademicYearDto {
   @IsString()

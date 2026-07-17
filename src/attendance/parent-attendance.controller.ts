@@ -1,4 +1,11 @@
-import { BadRequestException, Controller, Get, Param, ParseIntPipe, Query } from '@nestjs/common';
+import {
+  BadRequestException,
+  Controller,
+  Get,
+  Param,
+  ParseIntPipe,
+  Query,
+} from '@nestjs/common';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { Roles } from '../common/decorators/roles.decorator';
 import type { AuthenticatedUser } from '../common/interfaces/jwt-payload.interface';
@@ -20,7 +27,13 @@ export class ParentAttendanceController {
     @Param('id', ParseIntPipe) id: number,
     @Query('month') month: string,
   ) {
-    if (!month) throw new BadRequestException('month query param is required (YYYY-MM)');
-    return this.attendanceService.getChildAttendance(user.schoolId!, user.userId, BigInt(id), month);
+    if (!month)
+      throw new BadRequestException('month query param is required (YYYY-MM)');
+    return this.attendanceService.getChildAttendance(
+      user.schoolId!,
+      user.userId,
+      BigInt(id),
+      month,
+    );
   }
 }

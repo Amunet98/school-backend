@@ -11,12 +11,21 @@ export class SectionsController {
   constructor(private readonly sectionsService: SectionsService) {}
 
   @Get()
-  findAll(@CurrentUser() user: AuthenticatedUser, @Query('class_id') classId?: string) {
-    return this.sectionsService.findAll(user.schoolId!, classId ? Number(classId) : undefined);
+  findAll(
+    @CurrentUser() user: AuthenticatedUser,
+    @Query('class_id') classId?: string,
+  ) {
+    return this.sectionsService.findAll(
+      user.schoolId!,
+      classId ? Number(classId) : undefined,
+    );
   }
 
   @Post()
-  create(@CurrentUser() user: AuthenticatedUser, @Body() dto: CreateSectionDto) {
+  create(
+    @CurrentUser() user: AuthenticatedUser,
+    @Body() dto: CreateSectionDto,
+  ) {
     return this.sectionsService.create(user.schoolId!, dto);
   }
 }

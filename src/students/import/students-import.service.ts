@@ -45,7 +45,11 @@ export class StudentsImportService {
     return result;
   }
 
-  private async importRow(schoolId: bigint, academicYearId: bigint, row: StudentCsvRow) {
+  private async importRow(
+    schoolId: bigint,
+    academicYearId: bigint,
+    row: StudentCsvRow,
+  ) {
     if (!row.full_name?.trim()) {
       throw new Error('full_name is required');
     }
@@ -64,7 +68,9 @@ export class StudentsImportService {
         where: { schoolId, classId: klass.id, name: row.section_name!.trim() },
       });
       if (!section) {
-        throw new Error(`Section "${row.section_name}" not found in class "${row.class_name}"`);
+        throw new Error(
+          `Section "${row.section_name}" not found in class "${row.class_name}"`,
+        );
       }
 
       const student = await tx.student.create({
@@ -91,7 +97,11 @@ export class StudentsImportService {
           });
         }
         await tx.studentGuardian.create({
-          data: { studentId: student.id, guardianId: guardian.id, isPrimary: true },
+          data: {
+            studentId: student.id,
+            guardianId: guardian.id,
+            isPrimary: true,
+          },
         });
       }
 

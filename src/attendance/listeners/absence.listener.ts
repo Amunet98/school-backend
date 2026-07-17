@@ -1,6 +1,9 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { OnEvent } from '@nestjs/event-emitter';
-import { ABSENCE_MARKED_EVENT, AbsenceMarkedEvent } from '../events/absence-marked.event';
+import {
+  ABSENCE_MARKED_EVENT,
+  AbsenceMarkedEvent,
+} from '../events/absence-marked.event';
 
 /**
  * Placeholder consumer for absence events. The SMS milestone will attach a

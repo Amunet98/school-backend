@@ -1,5 +1,12 @@
 import { Type } from 'class-transformer';
-import { ArrayMinSize, IsArray, IsDateString, IsIn, IsInt, ValidateNested } from 'class-validator';
+import {
+  ArrayMinSize,
+  IsArray,
+  IsDateString,
+  IsIn,
+  IsInt,
+  ValidateNested,
+} from 'class-validator';
 
 const ATTENDANCE_STATUSES = ['present', 'absent', 'late', 'leave'] as const;
 export type AttendanceStatusInput = (typeof ATTENDANCE_STATUSES)[number];

@@ -16,7 +16,10 @@ export class TeachersController {
   }
 
   @Post()
-  create(@CurrentUser() user: AuthenticatedUser, @Body() dto: CreateTeacherDto) {
+  create(
+    @CurrentUser() user: AuthenticatedUser,
+    @Body() dto: CreateTeacherDto,
+  ) {
     return this.teachersService.create(user.schoolId!, dto);
   }
 }

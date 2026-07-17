@@ -9,5 +9,10 @@ export type SmsPurpose = 'absence' | 'notice' | 'fee_reminder' | 'otp';
  * without touching call sites.
  */
 export interface SmsGateway {
-  send(schoolId: bigint | null, phone: string, body: string, purpose: SmsPurpose): Promise<void>;
+  send(
+    schoolId: bigint | null,
+    phone: string,
+    body: string,
+    purpose: SmsPurpose,
+  ): Promise<void>;
 }

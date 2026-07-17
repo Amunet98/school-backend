@@ -21,7 +21,9 @@ export class TeachersService {
    */
   async create(schoolId: bigint, dto: CreateTeacherDto) {
     return this.prisma.$transaction(async (tx) => {
-      let user = await tx.user.findFirst({ where: { schoolId, phone: dto.phone } });
+      let user = await tx.user.findFirst({
+        where: { schoolId, phone: dto.phone },
+      });
 
       if (!user) {
         const passwordHash = await argon2.hash(dto.password ?? 'changeme123');

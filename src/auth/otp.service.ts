@@ -19,7 +19,10 @@ export class OtpService {
 
   generate(userId: bigint): string {
     const code = Math.floor(100000 + Math.random() * 900000).toString();
-    this.pending.set(userId.toString(), { code, expiresAt: Date.now() + OTP_TTL_MS });
+    this.pending.set(userId.toString(), {
+      code,
+      expiresAt: Date.now() + OTP_TTL_MS,
+    });
     return code;
   }
 

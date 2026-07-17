@@ -15,7 +15,12 @@ import { TeachersService } from './teachers/teachers.service';
     AcademicYearsController,
     TeachersController,
   ],
-  providers: [ClassesService, SectionsService, AcademicYearsService, TeachersService],
+  providers: [
+    ClassesService,
+    SectionsService,
+    AcademicYearsService,
+    TeachersService,
+  ],
   exports: [SectionsService],
 })
 export class AcademicsModule {}

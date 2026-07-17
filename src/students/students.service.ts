@@ -1,4 +1,8 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { PrismaService } from '../common/prisma/prisma.service';
 import { CreateStudentDto } from './dto/create-student.dto';
 import { UpdateStudentDto } from './dto/update-student.dto';
@@ -13,7 +17,11 @@ export class StudentsService {
         schoolId,
         deletedAt: null,
         ...(sectionId
-          ? { enrollments: { some: { sectionId: BigInt(sectionId), deletedAt: null } } }
+          ? {
+              enrollments: {
+                some: { sectionId: BigInt(sectionId), deletedAt: null },
+              },
+            }
           : {}),
       },
       include: {
@@ -121,10 +129,20 @@ export class StudentsService {
     academicYearId: number,
   ) {
     const [section, year] = await Promise.all([
-      this.prisma.section.findFirst({ where: { id: BigInt(sectionId), schoolId } }),
-      this.prisma.academicYear.findFirst({ where: { id: BigInt(academicYearId), schoolId } }),
+      this.prisma.section.findFirst({
+        where: { id: BigInt(sectionId), schoolId },
+      }),
+      this.prisma.academicYear.findFirst({
+        where: { id: BigInt(academicYearId), schoolId },
+      }),
     ]);
-    if (!section) throw new BadRequestException('section_id does not belong to this school');
-    if (!year) throw new BadRequestException('academic_year_id does not belong to this school');
+    if (!section)
+      throw new BadRequestException(
+        'section_id does not belong to this school',
+      );
+    if (!year)
+      throw new BadRequestException(
+        'academic_year_id does not belong to this school',
+      );
   }
 }

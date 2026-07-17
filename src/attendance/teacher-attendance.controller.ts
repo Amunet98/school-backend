@@ -1,4 +1,12 @@
-import { Body, Controller, Get, Param, ParseIntPipe, Post, Query } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Get,
+  Param,
+  ParseIntPipe,
+  Post,
+  Query,
+} from '@nestjs/common';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { Roles } from '../common/decorators/roles.decorator';
 import type { AuthenticatedUser } from '../common/interfaces/jwt-payload.interface';
@@ -21,7 +29,11 @@ export class TeacherAttendanceController {
     @Param('id', ParseIntPipe) id: number,
     @Query('date') date: string,
   ) {
-    return this.attendanceService.getSectionStudents(user.schoolId!, BigInt(id), date);
+    return this.attendanceService.getSectionStudents(
+      user.schoolId!,
+      BigInt(id),
+      date,
+    );
   }
 
   @Post('sections/:id/attendance')
@@ -30,6 +42,11 @@ export class TeacherAttendanceController {
     @Param('id', ParseIntPipe) id: number,
     @Body() dto: MarkAttendanceDto,
   ) {
-    return this.attendanceService.markAttendance(user.schoolId!, BigInt(id), user.userId, dto);
+    return this.attendanceService.markAttendance(
+      user.schoolId!,
+      BigInt(id),
+      user.userId,
+      dto,
+    );
   }
 }

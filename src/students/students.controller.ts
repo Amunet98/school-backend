@@ -29,17 +29,29 @@ export class StudentsController {
   ) {}
 
   @Get()
-  findAll(@CurrentUser() user: AuthenticatedUser, @Query('section_id') sectionId?: string) {
-    return this.studentsService.findAll(user.schoolId!, sectionId ? Number(sectionId) : undefined);
+  findAll(
+    @CurrentUser() user: AuthenticatedUser,
+    @Query('section_id') sectionId?: string,
+  ) {
+    return this.studentsService.findAll(
+      user.schoolId!,
+      sectionId ? Number(sectionId) : undefined,
+    );
   }
 
   @Get(':id')
-  findOne(@CurrentUser() user: AuthenticatedUser, @Param('id', ParseIntPipe) id: number) {
+  findOne(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('id', ParseIntPipe) id: number,
+  ) {
     return this.studentsService.findOneOrThrow(user.schoolId!, BigInt(id));
   }
 
   @Post()
-  create(@CurrentUser() user: AuthenticatedUser, @Body() dto: CreateStudentDto) {
+  create(
+    @CurrentUser() user: AuthenticatedUser,
+    @Body() dto: CreateStudentDto,
+  ) {
     return this.studentsService.create(user.schoolId!, dto);
   }
 

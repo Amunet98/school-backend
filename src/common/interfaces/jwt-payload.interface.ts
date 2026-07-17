@@ -1,4 +1,5 @@
-export type UserRoleName = 'super_admin' | 'school_admin' | 'teacher' | 'guardian';
+export type UserRoleName =
+  'super_admin' | 'school_admin' | 'teacher' | 'guardian';
 
 /** Access-token payload. school_id is null only for super_admin. */
 export interface JwtAccessPayload {

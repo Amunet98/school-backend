@@ -6,7 +6,10 @@ import { AppModule } from '../src/app.module';
 import { configureApp } from '../src/bootstrap';
 
 const SCHOOL_A_ADMIN = { phone: '9800000001', password: 'Admin@12345' };
-const SCHOOL_A_TEACHER_GUARDIAN = { phone: '9800000002', password: 'Teacher@12345' };
+const SCHOOL_A_TEACHER_GUARDIAN = {
+  phone: '9800000002',
+  password: 'Teacher@12345',
+};
 const SCHOOL_B_ADMIN = { phone: '9800000099', password: 'Admin@12345' };
 
 function todayIso(): string {
@@ -82,8 +85,12 @@ describe('School Backend (e2e)', () => {
       .get('/api/v1/sections')
       .set('Authorization', `Bearer ${adminToken}`)
       .expect(200);
-    const sectionA = sectionsRes.body.find((s: any) => s.name === 'A' && s.classId === classId);
-    const sectionB = sectionsRes.body.find((s: any) => s.name === 'B' && s.classId === classId);
+    const sectionA = sectionsRes.body.find(
+      (s: any) => s.name === 'A' && s.classId === classId,
+    );
+    const sectionB = sectionsRes.body.find(
+      (s: any) => s.name === 'B' && s.classId === classId,
+    );
     expect(sectionA).toBeDefined();
     expect(sectionB).toBeDefined();
     sectionAId = sectionA.id;
@@ -105,8 +112,18 @@ describe('School Backend (e2e)', () => {
       .send({
         full_name: 'Newly Admitted Student',
         gender: 'male',
-        guardians: [{ full_name: 'New Guardian', phone: '9822220001', relation: 'father' }],
-        enrollment: { academic_year_id: Number(yearId), section_id: Number(sectionAId), roll_no: 50 },
+        guardians: [
+          {
+            full_name: 'New Guardian',
+            phone: '9822220001',
+            relation: 'father',
+          },
+        ],
+        enrollment: {
+          academic_year_id: Number(yearId),
+          section_id: Number(sectionAId),
+          roll_no: 50,
+        },
       })
       .expect(201);
 
@@ -173,7 +190,9 @@ describe('School Backend (e2e)', () => {
 
     expect(res.body.date_bs).toMatch(/^\d{4}-\d{2}-\d{2}$/);
 
-    const aarav = res.body.students.find((s: any) => s.full_name === 'Aarav Sharma');
+    const aarav = res.body.students.find(
+      (s: any) => s.full_name === 'Aarav Sharma',
+    );
     expect(aarav).toBeDefined();
     aaravEnrollmentId = aarav.enrollment_id;
 
@@ -183,7 +202,9 @@ describe('School Backend (e2e)', () => {
     expect(newlyAdmitted).toBeDefined();
     otherEnrollmentId = newlyAdmitted.enrollment_id;
 
-    const csvStudent = res.body.students.find((s: any) => s.full_name === 'CSV Student A');
+    const csvStudent = res.body.students.find(
+      (s: any) => s.full_name === 'CSV Student A',
+    );
     expect(csvStudent).toBeDefined();
 
     // All fresh, no attendance marked yet.
@@ -203,8 +224,12 @@ describe('School Backend (e2e)', () => {
       })
       .expect(201);
 
-    const aarav = res.body.students.find((s: any) => s.enrollment_id === aaravEnrollmentId);
-    const other = res.body.students.find((s: any) => s.enrollment_id === otherEnrollmentId);
+    const aarav = res.body.students.find(
+      (s: any) => s.enrollment_id === aaravEnrollmentId,
+    );
+    const other = res.body.students.find(
+      (s: any) => s.enrollment_id === otherEnrollmentId,
+    );
     expect(aarav.status).toBe('present');
     expect(other.status).toBe('absent');
   });
@@ -214,7 +239,12 @@ describe('School Backend (e2e)', () => {
     await request(server)
       .post(`/api/v1/sections/${sectionBId}/attendance`)
       .set('Authorization', `Bearer ${teacherToken}`)
-      .send({ date: todayIso(), records: [{ enrollment_id: Number(aaravEnrollmentId), status: 'present' }] })
+      .send({
+        date: todayIso(),
+        records: [
+          { enrollment_id: Number(aaravEnrollmentId), status: 'present' },
+        ],
+      })
       .expect(403); // teacher isn't class_teacher of section B at all
   });
 
@@ -228,7 +258,9 @@ describe('School Backend (e2e)', () => {
       })
       .expect(201);
 
-    const aarav = res.body.students.find((s: any) => s.enrollment_id === aaravEnrollmentId);
+    const aarav = res.body.students.find(
+      (s: any) => s.enrollment_id === aaravEnrollmentId,
+    );
     expect(aarav.status).toBe('late');
 
     // Fetching again should still show exactly one status per student for the date.
@@ -250,7 +282,9 @@ describe('School Backend (e2e)', () => {
       .set('Authorization', `Bearer ${teacherToken}`)
       .expect(200);
 
-    const aarav = childrenRes.body.find((c: any) => c.full_name === 'Aarav Sharma');
+    const aarav = childrenRes.body.find(
+      (c: any) => c.full_name === 'Aarav Sharma',
+    );
     expect(aarav).toBeDefined();
 
     const attendanceRes = await request(server)
@@ -259,7 +293,9 @@ describe('School Backend (e2e)', () => {
       .set('Authorization', `Bearer ${teacherToken}`)
       .expect(200);
 
-    const todayRecord = attendanceRes.body.find((r: any) => r.date === todayIso());
+    const todayRecord = attendanceRes.body.find(
+      (r: any) => r.date === todayIso(),
+    );
     expect(todayRecord).toBeDefined();
     expect(todayRecord.status).toBe('late');
     expect(todayRecord.date_bs).toMatch(/^\d{4}-\d{2}-\d{2}$/);
@@ -282,7 +318,9 @@ describe('School Backend (e2e)', () => {
     for (const student of studentsRes.body) {
       expect(student.schoolId).toBe(schoolBId);
     }
-    expect(studentsRes.body.some((s: any) => s.id === createdStudentId)).toBe(false);
+    expect(studentsRes.body.some((s: any) => s.id === createdStudentId)).toBe(
+      false,
+    );
   });
 
   it('school B admin cannot read a school A student directly by id (tenant isolation)', async () => {
@@ -296,7 +334,12 @@ describe('School Backend (e2e)', () => {
     await request(server)
       .post(`/api/v1/sections/${sectionAId}/attendance`)
       .set('Authorization', `Bearer ${schoolBAdminToken}`)
-      .send({ date: todayIso(), records: [{ enrollment_id: Number(aaravEnrollmentId), status: 'present' }] })
+      .send({
+        date: todayIso(),
+        records: [
+          { enrollment_id: Number(aaravEnrollmentId), status: 'present' },
+        ],
+      })
       .expect(403); // school_admin role isn't `teacher` at all
   });
 });
