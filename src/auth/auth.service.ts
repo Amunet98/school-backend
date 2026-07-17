@@ -8,8 +8,10 @@ import type {
   JwtRefreshPayload,
   UserRoleName,
 } from '../common/interfaces/jwt-payload.interface';
+import { SMS_GATEWAY, type SmsGateway } from '../sms/sms-gateway.interface';
+import { otpTemplate, resolveLocale } from '../sms/sms-templates';
+import { SmsService } from '../sms/sms.service';
 import { OtpService } from './otp.service';
-import { SMS_GATEWAY, type SmsGateway } from './sms/sms-gateway.interface';
 
 export interface AuthTokens {
   access_token: string;
@@ -24,6 +26,10 @@ type UserWithRoles = {
   passwordHash: string | null;
   isActive: boolean;
   roles: { role: UserRoleName }[];
+  // Only populated by queries that `include: { school: true }` (requestOtp,
+  // verifyOtp — need settings.locale for the SMS template); login/refresh
+  // never read this field.
+  school?: { settings: unknown } | null;
 };
 
 @Injectable()
@@ -33,6 +39,7 @@ export class AuthService {
     private readonly jwt: JwtService,
     private readonly config: ConfigService,
     private readonly otp: OtpService,
+    private readonly sms: SmsService,
     @Inject(SMS_GATEWAY) private readonly smsGateway: SmsGateway,
   ) {}
 
@@ -84,7 +91,7 @@ export class AuthService {
   async requestOtp(phone: string): Promise<void> {
     const candidates = (await this.prisma.user.findMany({
       where: { phone, isActive: true },
-      include: { roles: true },
+      include: { roles: true, school: true },
     })) as UserWithRoles[];
 
     if (candidates.length === 0) {
@@ -98,18 +105,28 @@ export class AuthService {
     const user = candidates[0];
 
     const code = this.otp.generate(user.id);
-    await this.smsGateway.send(
-      user.schoolId,
-      phone,
-      `Your login code is ${code}`,
-      'otp',
-    );
+    const locale = resolveLocale(user.school?.settings);
+    const body = otpTemplate(locale, { code });
+
+    if (user.schoolId == null) {
+      // sms_messages.school_id is NOT NULL, and a null schoolId only ever
+      // belongs to a super_admin (who has no school to attribute the row
+      // to) — bypass the queue/table entirely and deliver directly.
+      await this.smsGateway.deliver(phone, body);
+    } else {
+      await this.sms.enqueue({
+        schoolId: user.schoolId,
+        phone,
+        body,
+        purpose: 'otp',
+      });
+    }
   }
 
   async verifyOtp(phone: string, code: string): Promise<AuthTokens> {
     const candidates = (await this.prisma.user.findMany({
       where: { phone, isActive: true },
-      include: { roles: true },
+      include: { roles: true, school: true },
     })) as UserWithRoles[];
 
     if (candidates.length === 0) {
