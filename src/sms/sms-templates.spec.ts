@@ -1,6 +1,7 @@
 import {
   absenceAlert,
   isSmsEnabled,
+  noticeAlert,
   otpTemplate,
   resolveLocale,
 } from './sms-templates';
@@ -57,6 +58,26 @@ describe('absenceAlert', () => {
     const body = absenceAlert('en', params);
     expect(body).toBe(
       'Sunrise Secondary School: Aarav Sharma is absent today (2083-04-02 BS). Please contact the school if this is unexpected.',
+    );
+  });
+});
+
+describe('noticeAlert', () => {
+  const params = {
+    schoolName: 'Sunrise Secondary School',
+    title: 'School closed tomorrow for Dashain',
+  };
+
+  it('renders the ne template with school and title, title-only (no body)', () => {
+    const body = noticeAlert('ne', params);
+    expect(body).toContain('Sunrise Secondary School');
+    expect(body).toContain('School closed tomorrow for Dashain');
+  });
+
+  it('renders the en template with school and title', () => {
+    const body = noticeAlert('en', params);
+    expect(body).toBe(
+      'Sunrise Secondary School notice: School closed tomorrow for Dashain',
     );
   });
 });
