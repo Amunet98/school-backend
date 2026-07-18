@@ -547,4 +547,268 @@ describe('School Backend (e2e)', () => {
       expect(otpRow?.status).toBe('sent');
     });
   });
+
+  describe('Notices milestone', () => {
+    // Aarav Sharma (the teacher-guardian's own child, section A) is
+    // primary-guardianed by the teacher-guardian account itself — a known,
+    // always-present seeded phone to assert a single dedup key against
+    // without depending on how many other students earlier tests admitted.
+    const AARAV_GUARDIAN_PHONE = SCHOOL_A_TEACHER_GUARDIAN.phone;
+
+    let schoolWideNoticeId: string;
+    let classWideNoticeId: string;
+    let sectionBNoticeId: string;
+    let siblingNoticeId: string;
+    const siblingGuardianPhone = '9855550099';
+
+    it('rejects a stray class_id when audience is not "class"', async () => {
+      await request(server)
+        .post('/api/v1/notices')
+        .set('Authorization', `Bearer ${adminToken}`)
+        .send({
+          title: 'Stray class id',
+          body: 'body',
+          audience: 'school',
+          class_id: Number(classId),
+        })
+        .expect(400);
+    });
+
+    it('rejects a stray section_id when audience is not "section"', async () => {
+      await request(server)
+        .post('/api/v1/notices')
+        .set('Authorization', `Bearer ${adminToken}`)
+        .send({
+          title: 'Stray section id',
+          body: 'body',
+          audience: 'class',
+          class_id: Number(classId),
+          section_id: Number(sectionAId),
+        })
+        .expect(400);
+    });
+
+    it('rejects audience="class" with no class_id', async () => {
+      await request(server)
+        .post('/api/v1/notices')
+        .set('Authorization', `Bearer ${adminToken}`)
+        .send({ title: 'Missing class id', body: 'body', audience: 'class' })
+        .expect(400);
+    });
+
+    it('rejects audience="section" with no section_id', async () => {
+      await request(server)
+        .post('/api/v1/notices')
+        .set('Authorization', `Bearer ${adminToken}`)
+        .send({
+          title: 'Missing section id',
+          body: 'body',
+          audience: 'section',
+        })
+        .expect(400);
+    });
+
+    it('admin posts a school-wide notice with send_sms, guardian SMS reaches sent', async () => {
+      const res = await request(server)
+        .post('/api/v1/notices')
+        .set('Authorization', `Bearer ${adminToken}`)
+        .send({
+          title: 'School closed tomorrow',
+          body: 'School will remain closed tomorrow for Dashain.',
+          audience: 'school',
+          send_sms: true,
+        })
+        .expect(201);
+
+      expect(res.body.audience).toBe('school');
+      schoolWideNoticeId = res.body.id;
+
+      const dedupKey = `notice:${schoolWideNoticeId}:${AARAV_GUARDIAN_PHONE}`;
+      const sent = await pollSmsSent({ dedupKey });
+      expect(sent).not.toBeNull();
+      expect(sent?.status).toBe('sent');
+    });
+
+    it('GET /notices (admin) lists the school-wide notice, unpaginated', async () => {
+      const res = await request(server)
+        .get('/api/v1/notices')
+        .set('Authorization', `Bearer ${adminToken}`)
+        .expect(200);
+
+      const notice = res.body.find((n: any) => n.id === schoolWideNoticeId);
+      expect(notice).toBeDefined();
+      expect(notice.audience).toBe('school');
+    });
+
+    it('admin posts a class-wide notice with send_sms:false — no sms rows created', async () => {
+      const res = await request(server)
+        .post('/api/v1/notices')
+        .set('Authorization', `Bearer ${adminToken}`)
+        .send({
+          title: 'Class 7 test schedule',
+          body: 'Unit test next week.',
+          audience: 'class',
+          class_id: Number(classId),
+          send_sms: false,
+        })
+        .expect(201);
+
+      classWideNoticeId = res.body.id;
+
+      await new Promise((resolve) => setTimeout(resolve, 300));
+      const rows = await dbPrisma.smsMessage.findMany({
+        where: { dedupKey: { startsWith: `notice:${classWideNoticeId}:` } },
+      });
+      expect(rows).toHaveLength(0);
+    });
+
+    it('admin posts a section-B-only notice (not visible to the section-A teacher)', async () => {
+      const res = await request(server)
+        .post('/api/v1/notices')
+        .set('Authorization', `Bearer ${adminToken}`)
+        .send({
+          title: 'Section B only',
+          body: 'Only for section B.',
+          audience: 'section',
+          section_id: Number(sectionBId),
+        })
+        .expect(201);
+      sectionBNoticeId = res.body.id;
+    });
+
+    it('two siblings sharing a guardian phone get exactly one notice SMS (dedup)', async () => {
+      async function admitSiblingIntoSectionA(fullName: string): Promise<void> {
+        await request(server)
+          .post('/api/v1/students')
+          .set('Authorization', `Bearer ${adminToken}`)
+          .send({
+            full_name: fullName,
+            gender: 'male',
+            guardians: [
+              {
+                full_name: 'Shared Guardian',
+                phone: siblingGuardianPhone,
+                relation: 'father',
+                is_primary: true,
+              },
+            ],
+            enrollment: {
+              academic_year_id: Number(yearId),
+              section_id: Number(sectionAId),
+              roll_no: 80,
+            },
+          })
+          .expect(201);
+      }
+
+      await admitSiblingIntoSectionA('Sibling One');
+      await admitSiblingIntoSectionA('Sibling Two');
+
+      const res = await request(server)
+        .post('/api/v1/notices')
+        .set('Authorization', `Bearer ${adminToken}`)
+        .send({
+          title: 'Section A sibling dedup test',
+          body: 'body',
+          audience: 'section',
+          section_id: Number(sectionAId),
+          send_sms: true,
+        })
+        .expect(201);
+      siblingNoticeId = res.body.id;
+
+      const dedupKey = `notice:${siblingNoticeId}:${siblingGuardianPhone}`;
+      const sent = await pollSmsSent({ dedupKey });
+      expect(sent).not.toBeNull();
+
+      const rows = await dbPrisma.smsMessage.count({
+        where: {
+          dedupKey: {
+            startsWith: `notice:${siblingNoticeId}:${siblingGuardianPhone}`,
+          },
+        },
+      });
+      expect(rows).toBe(1);
+    });
+
+    it('teacher sees school-wide + own-class + own-section notices, not section-B', async () => {
+      const res = await request(server)
+        .get('/api/v1/my/notices')
+        .set('Authorization', `Bearer ${teacherToken}`)
+        .expect(200);
+
+      const ids = res.body.map((n: any) => n.id);
+      expect(ids).toContain(schoolWideNoticeId);
+      expect(ids).toContain(classWideNoticeId);
+      expect(ids).toContain(siblingNoticeId);
+      expect(ids).not.toContain(sectionBNoticeId);
+    });
+
+    it('admin (not a teacher) is forbidden from GET /my/notices', async () => {
+      await request(server)
+        .get('/api/v1/my/notices')
+        .set('Authorization', `Bearer ${adminToken}`)
+        .expect(403);
+    });
+
+    it('teacher (not an admin) is forbidden from the admin notices routes', async () => {
+      await request(server)
+        .get('/api/v1/notices')
+        .set('Authorization', `Bearer ${teacherToken}`)
+        .expect(403);
+    });
+
+    it('teacher posts a notice to their own section: 201', async () => {
+      const res = await request(server)
+        .post('/api/v1/my/notices')
+        .set('Authorization', `Bearer ${teacherToken}`)
+        .send({
+          title: 'Homework reminder',
+          body: 'Please complete the homework by Friday.',
+          section_id: Number(sectionAId),
+        })
+        .expect(201);
+
+      expect(res.body.audience).toBe('section');
+      expect(res.body.sectionId).toBe(sectionAId);
+    });
+
+    it('teacher posting to section B (not their own): 403', async () => {
+      await request(server)
+        .post('/api/v1/my/notices')
+        .set('Authorization', `Bearer ${teacherToken}`)
+        .send({
+          title: 'Not my section',
+          body: 'body',
+          section_id: Number(sectionBId),
+        })
+        .expect(403);
+    });
+
+    it("school B admin only sees school B notices, none of school A's", async () => {
+      const res = await request(server)
+        .get('/api/v1/notices')
+        .set('Authorization', `Bearer ${schoolBAdminToken}`)
+        .expect(200);
+
+      const ids = res.body.map((n: any) => n.id);
+      expect(ids).not.toContain(schoolWideNoticeId);
+      expect(ids).not.toContain(classWideNoticeId);
+      expect(ids).not.toContain(sectionBNoticeId);
+      expect(ids).not.toContain(siblingNoticeId);
+    });
+
+    it('school B admin targeting a school A section_id: 404 (tenant isolation)', async () => {
+      await request(server)
+        .post('/api/v1/notices')
+        .set('Authorization', `Bearer ${schoolBAdminToken}`)
+        .send({
+          title: 'Cross-school attempt',
+          body: 'body',
+          audience: 'section',
+          section_id: Number(sectionAId),
+        })
+        .expect(404);
+    });
+  });
 });
