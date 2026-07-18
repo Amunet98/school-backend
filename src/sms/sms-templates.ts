@@ -43,6 +43,22 @@ export function absenceAlert(
   return `${schoolName}: ${studentName} aaja (${dateBs} BS) school gaira anupasthit chha. Prashna vaye school lai sampark garnuhos.`;
 }
 
+/**
+ * Notice alert sent to a guardian when staff post a notice with
+ * `send_sms: true`. Title-only (no body) to keep Nepali SMS at 1-2
+ * segments — guardians open the app/portal for the full text.
+ */
+export function noticeAlert(
+  locale: SmsLocale,
+  params: { schoolName: string; title: string },
+): string {
+  const { schoolName, title } = params;
+  if (locale === 'en') {
+    return `${schoolName} notice: ${title}`;
+  }
+  return `${schoolName} suchana: ${title}`;
+}
+
 /** OTP login-code SMS. */
 export function otpTemplate(
   locale: SmsLocale,
