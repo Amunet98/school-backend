@@ -163,3 +163,62 @@ applies pending migration files).
   used until later milestones (notices, fee_structures, invoices,
   payments, sms_messages) so those milestones are additive code, not
   additive migrations.
+- **Notices (`src/notices/`)**: staff announcements, additive on top of
+  the `Notice` table that already existed from the initial migration —
+  no schema change this milestone. Three audiences: `school` (everyone),
+  `class` (one `Class`), `section` (one `Section`) — `class_id`/
+  `section_id` are mutually exclusive with the audience and with each
+  other; `class-validator`'s `@ValidateIf` only *requires* the matching
+  id, it can't reject a *stray* one sent alongside the wrong audience, so
+  that rejection (400) lives in `NoticesService.create`. Target existence
+  is re-checked scoped by `schoolId` (404 on cross-school or missing ids)
+  — the tenant-isolation gate, same pattern as everywhere else.
+  - **Who posts**: `school_admin` via `POST /notices` picks any audience.
+    `teacher` via `POST /my/notices` can only post to their own
+    class-taught section — the DTO doesn't even accept an `audience`
+    field, the service forces `'section'` and asserts ownership with a
+    copy of `AttendanceService.assertOwnsSectionAsClassTeacher`
+    (`attendance.service.ts:82-100` — copied, not cross-imported, to keep
+    the two modules decoupled). Cross-school section 404s; a real
+    section the caller doesn't teach 403s.
+  - **Teacher's relevant-notices view**: `GET /my/notices` unions
+    school-wide notices with class-wide notices for the classes of
+    sections the teacher teaches and section-wide notices for those
+    sections directly (mirrors `AttendanceService.getMySections`,
+    `attendance.service.ts:31-41`, re-implemented privately in
+    `NoticesService` rather than cross-imported).
+  - **SMS fan-out**: on create with `send_sms: true`,
+    `NOTICE_CREATED_EVENT` is emitted *after* `notice.create` resolves
+    (never before — `NoticeSmsListener` re-reads the row rather than
+    trusting the event payload beyond the id). The listener mirrors
+    `AbsenceListener`: gates on `isSmsEnabled(school.settings)`, resolves
+    locale, and sends a **title-only** body —
+    `noticeAlert(locale, {schoolName, title})` in `sms-templates.ts` —
+    deliberately omitting the notice body to keep the Nepali SMS at 1-2
+    segments; guardians read the full text in the app/portal.
+    `NoticesService.resolveRecipientPhones(schoolId, notice)` (public,
+    unit-tested directly) resolves recipients: current academic year
+    (`academicYear.findFirst({isCurrent:true})`, no current year -> `[]`)
+    -> active, non-deleted enrollments scoped to the notice's audience
+    -> each enrollment's primary guardian (falling back to any guardian,
+    skipping enrollments with none) -> phones deduped through a `Set` so
+    siblings sharing a guardian get exactly one SMS. Each recipient is
+    enqueued with `dedupKey: notice:<noticeId>:<phone>`, same
+    per-key-idempotency pattern as absence alerts (`P2002` collision ->
+    `enqueue` returns `null`, logged as already-handled). The whole
+    listener body and each individual enqueue call are separately
+    wrapped in try/catch, same as `AbsenceListener` — an SMS problem here
+    can never affect notice creation, and one bad recipient can't stop
+    the rest of the fan-out.
+  - **Future hardening (not built)**: the fan-out loop is synchronous,
+    in-process, one `enqueue` call per recipient — fine at pilot scale (a
+    few hundred guardians, already off the request path since it runs
+    from the event, not the controller) but not how it should scale.
+    A later pass could replace it with a single
+    "expand-recipients" graphile-worker job that itself schedules the
+    per-recipient `send_sms` jobs, instead of doing the expansion
+    synchronously inside the event listener.
+  - **Out of scope this milestone**: notice edit/delete (admins can only
+    create/list, matching every other CRUD module's lack of update
+    routes so far), parent-facing notice views, pagination, scheduled or
+    draft notices.
