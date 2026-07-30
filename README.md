@@ -10,9 +10,22 @@ academics/students incl. CSV import, attendance) and the SMS milestone
 (queue, absence alerts to guardians, OTP through the queue) are both
 implemented.
 
+The staff-facing web client lives in a separate repo:
+[`school-admin`](https://github.com/Amunet98/school-admin).
+
 See [`CLAUDE.md`](./CLAUDE.md) for the full breakdown of commands, seed
 credentials, and implementation notes (tenant-scoping rule, BS dates,
 attendance upsert, etc.).
+
+## Stack
+
+- NestJS 11 + TypeScript (strict)
+- Prisma 6 + PostgreSQL 16 (via Docker Compose)
+- JWT auth (access + refresh, HS256), argon2 password hashing
+- graphile-worker for SMS delivery — Postgres-backed, embedded in the API
+  process (no separate worker, no Redis)
+- `nepali-date-converter` for AD↔BS dates
+- Jest + Supertest
 
 ## Quickstart
 
