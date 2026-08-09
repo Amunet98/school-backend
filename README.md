@@ -1,5 +1,12 @@
 # School Backend
 
+[![NestJS](https://img.shields.io/badge/NestJS-11-e0234e?logo=nestjs&logoColor=white)](https://nestjs.com)
+[![TypeScript](https://img.shields.io/badge/TypeScript-strict-3178c6?logo=typescript&logoColor=white)](https://www.typescriptlang.org)
+[![Prisma](https://img.shields.io/badge/Prisma-6-2d3748?logo=prisma&logoColor=white)](https://www.prisma.io)
+[![PostgreSQL](https://img.shields.io/badge/PostgreSQL-16-4169e1?logo=postgresql&logoColor=white)](https://www.postgresql.org)
+[![Docker](https://img.shields.io/badge/Docker-compose-2496ed?logo=docker&logoColor=white)](https://docs.docker.com/compose/)
+[![Jest](https://img.shields.io/badge/tests-Jest%20%2B%20Supertest-c21325?logo=jest&logoColor=white)](https://jestjs.io)
+
 A multi-tenant school-management API for Nepali schools — attendance,
 students, guardians, enrollments, and SMS alerts today; notices and fees
 in later milestones. Built with NestJS, Prisma, PostgreSQL, and an
@@ -73,3 +80,7 @@ primary guardian via an embedded graphile-worker queue (`src/sms/`) — see
 `CLAUDE.md` for the dedup/locale/opt-out rules. No endpoints for notices,
 fee structures, or invoices/payments yet — those tables are modeled in the
 database already (so those milestones are additive code, not migrations).
+
+---
+
+More of my work: **[bimeshpoudel.com.np](https://www.bimeshpoudel.com.np)**
