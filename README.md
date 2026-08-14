@@ -8,14 +8,15 @@
 [![Jest](https://img.shields.io/badge/tests-Jest%20%2B%20Supertest-c21325?logo=jest&logoColor=white)](https://jestjs.io)
 
 A multi-tenant school-management API for Nepali schools — attendance,
-students, guardians, enrollments, and SMS alerts today; notices and fees
-in later milestones. Built with NestJS, Prisma, PostgreSQL, and an
+students, guardians, enrollments, SMS alerts, and staff notices today;
+fees in a later milestone. Built with NestJS, Prisma, PostgreSQL, and an
 embedded graphile-worker queue.
 
 Milestone 1 (scaffold, complete schema, auth + tenant scoping,
-academics/students incl. CSV import, attendance) and the SMS milestone
-(queue, absence alerts to guardians, OTP through the queue) are both
-implemented.
+academics/students incl. CSV import, attendance), the SMS milestone
+(queue, absence alerts to guardians, OTP through the queue), and notices
+(school/class/section-targeted announcements with optional SMS fan-out)
+are all implemented.
 
 The staff-facing web client lives in a separate repo:
 [`school-admin`](https://github.com/Amunet98/school-admin).
@@ -73,13 +74,18 @@ POST /api/v1/sections/:id/attendance     { date, records: [{ enrollment_id, stat
 
 GET  /api/v1/my/children                 (guardian)
 GET  /api/v1/children/:id/attendance?month=
+
+GET/POST /api/v1/notices                 (school_admin, any audience)
+GET/POST /api/v1/my/notices              (teacher, own section only)
 ```
 
 Marking a student `absent` (not `late`/`leave`) enqueues an SMS to their
 primary guardian via an embedded graphile-worker queue (`src/sms/`) — see
-`CLAUDE.md` for the dedup/locale/opt-out rules. No endpoints for notices,
-fee structures, or invoices/payments yet — those tables are modeled in the
-database already (so those milestones are additive code, not migrations).
+`CLAUDE.md` for the dedup/locale/opt-out rules. Notices with `send_sms: true`
+fan out the same way, title-only, to every guardian in the target audience.
+No endpoints for fee structures or invoices/payments yet — those tables are
+modeled in the database already (so that milestone is additive code, not
+migrations).
 
 ---
 
