@@ -153,6 +153,60 @@ export class NoticesService {
     });
   }
 
+  /**
+   * Same shape as getMySections above, scoped by the guardian's children's
+   * active enrollments instead of sections taught.
+   */
+  private async getMyChildrenSections(schoolId: bigint, userId: bigint) {
+    const guardian = await this.prisma.guardian.findFirst({
+      where: { schoolId, userId },
+    });
+    if (!guardian) return [];
+
+    const links = await this.prisma.studentGuardian.findMany({
+      where: { guardianId: guardian.id },
+      include: {
+        student: {
+          include: {
+            enrollments: {
+              where: { status: 'active', deletedAt: null },
+              include: { section: true },
+            },
+          },
+        },
+      },
+    });
+
+    return links
+      .filter(
+        (l) => l.student.schoolId === schoolId && l.student.deletedAt === null,
+      )
+      .flatMap((l) => l.student.enrollments.map((e) => e.section));
+  }
+
+  async findNoticesForGuardian(schoolId: bigint, userId: bigint) {
+    const sections = await this.getMyChildrenSections(schoolId, userId);
+    const classIds = [...new Set(sections.map((s) => s.classId))];
+    const sectionIds = [...new Set(sections.map((s) => s.id))];
+
+    return this.prisma.notice.findMany({
+      where: {
+        schoolId,
+        OR: [
+          { audience: 'school' },
+          ...(classIds.length
+            ? [{ audience: 'class', classId: { in: classIds } }]
+            : []),
+          ...(sectionIds.length
+            ? [{ audience: 'section', sectionId: { in: sectionIds } }]
+            : []),
+        ],
+      },
+      include: NOTICE_INCLUDE,
+      orderBy: { createdAt: 'desc' },
+    });
+  }
+
   async createMyNotice(
     schoolId: bigint,
     userId: bigint,

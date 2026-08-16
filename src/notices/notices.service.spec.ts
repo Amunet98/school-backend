@@ -25,6 +25,8 @@ describe('NoticesService', () => {
     teacher: { findFirst: jest.Mock };
     academicYear: { findFirst: jest.Mock };
     enrollment: { findMany: jest.Mock };
+    guardian: { findFirst: jest.Mock };
+    studentGuardian: { findMany: jest.Mock };
   };
   let emit: jest.Mock;
 
@@ -39,6 +41,8 @@ describe('NoticesService', () => {
       teacher: { findFirst: jest.fn() },
       academicYear: { findFirst: jest.fn() },
       enrollment: { findMany: jest.fn() },
+      guardian: { findFirst: jest.fn() },
+      studentGuardian: { findMany: jest.fn() },
     };
     emit = jest.fn();
 
@@ -271,6 +275,81 @@ describe('NoticesService', () => {
       ]);
       const phones = await service.resolveRecipientPhones(SCHOOL_ID, notice);
       expect(phones).toEqual(['9844444444']);
+    });
+  });
+
+  describe('findNoticesForGuardian', () => {
+    it('scopes to school-wide only when the caller has no guardian record', async () => {
+      prisma.guardian.findFirst.mockResolvedValue(null);
+      prisma.notice.findMany.mockResolvedValue([]);
+      await service.findNoticesForGuardian(SCHOOL_ID, USER_ID);
+      expect(prisma.notice.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { schoolId: SCHOOL_ID, OR: [{ audience: 'school' }] },
+        }),
+      );
+    });
+
+    it('unions school-wide notices with the class/section of every active child', async () => {
+      prisma.guardian.findFirst.mockResolvedValue({ id: 50n });
+      prisma.studentGuardian.findMany.mockResolvedValue([
+        {
+          student: {
+            schoolId: SCHOOL_ID,
+            deletedAt: null,
+            enrollments: [{ section: { id: 5n, classId: 2n } }],
+          },
+        },
+      ]);
+      prisma.notice.findMany.mockResolvedValue([{ id: 1n }]);
+
+      const result = await service.findNoticesForGuardian(SCHOOL_ID, USER_ID);
+
+      expect(prisma.notice.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: {
+            schoolId: SCHOOL_ID,
+            OR: [
+              { audience: 'school' },
+              { audience: 'class', classId: { in: [2n] } },
+              { audience: 'section', sectionId: { in: [5n] } },
+            ],
+          },
+        }),
+      );
+      expect(result).toEqual([{ id: 1n }]);
+    });
+
+    it('ignores a sibling enrolled at a different school and a soft-deleted child', async () => {
+      prisma.guardian.findFirst.mockResolvedValue({ id: 50n });
+      prisma.studentGuardian.findMany.mockResolvedValue([
+        {
+          student: {
+            schoolId: 999n, // different school
+            deletedAt: null,
+            enrollments: [{ section: { id: 5n, classId: 2n } }],
+          },
+        },
+        {
+          student: {
+            schoolId: SCHOOL_ID,
+            deletedAt: new Date(), // soft-deleted
+            enrollments: [{ section: { id: 6n, classId: 3n } }],
+          },
+        },
+      ]);
+      prisma.notice.findMany.mockResolvedValue([]);
+
+      await service.findNoticesForGuardian(SCHOOL_ID, USER_ID);
+
+      expect(prisma.notice.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: {
+            schoolId: SCHOOL_ID,
+            OR: [{ audience: 'school' }],
+          },
+        }),
+      );
     });
   });
 });
