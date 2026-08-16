@@ -159,6 +159,22 @@ applies pending migration files).
   `users` is unique on `(school_id, phone)`, not `phone` alone), only
   password login (which tries every matching candidate and checks the
   hash) disambiguates correctly.
+- **Intended-role gate on login**: `POST /auth/login` and
+  `POST /auth/otp/verify` both accept an optional `role` field (the
+  school-admin frontend sends the role picked on its `/welcome` screen).
+  If set and the authenticating account doesn't hold that role,
+  `AuthService#assertHasRole` throws `ForbiddenException` (403) *instead*
+  of issuing tokens for a different role — a deliberate, distinct status
+  from the 401 used for bad credentials/code, so the frontend can tell
+  "wrong password" from "right account, wrong role" apart. For OTP, the
+  code is verified (and consumed) *before* the role check, not after —
+  checking role first would let an unauthenticated caller probe "does
+  this phone have role X" for any phone number with no code at all. The
+  tradeoff: a role-mismatched OTP attempt burns the one-time code, so
+  retrying with the correct role needs a fresh `otp/request`. `role` is
+  validated against `LOGIN_ROLES` in `common/interfaces/jwt-payload.interface.ts`
+  (`school_admin` | `teacher` | `guardian` — `super_admin` excluded, no
+  client flow offers it).
 - **Full schema up front**: `prisma/schema.prisma` includes tables not
   used until later milestones (notices, fee_structures, invoices,
   payments, sms_messages) so those milestones are additive code, not

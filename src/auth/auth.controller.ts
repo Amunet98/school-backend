@@ -14,7 +14,7 @@ export class AuthController {
   @Post('login')
   @HttpCode(HttpStatus.OK)
   login(@Body() dto: LoginDto) {
-    return this.authService.login(dto.phone, dto.password);
+    return this.authService.login(dto.phone, dto.password, dto.role);
   }
 
   @Public()
@@ -36,6 +36,6 @@ export class AuthController {
   @Post('otp/verify')
   @HttpCode(HttpStatus.OK)
   verifyOtp(@Body() dto: OtpVerifyDto) {
-    return this.authService.verifyOtp(dto.phone, dto.code);
+    return this.authService.verifyOtp(dto.phone, dto.code, dto.role);
   }
 }

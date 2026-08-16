@@ -103,6 +103,21 @@ describe('School Backend (e2e)', () => {
       .expect(401);
   });
 
+  it('accepts login with a role param the account holds', async () => {
+    const res = await request(server)
+      .post('/api/v1/auth/login')
+      .send({ ...SCHOOL_A_ADMIN, role: 'school_admin' })
+      .expect(200);
+    expect(res.body.roles).toEqual(['school_admin']);
+  });
+
+  it('rejects login with a role param the account does not hold (403, not 401)', async () => {
+    await request(server)
+      .post('/api/v1/auth/login')
+      .send({ ...SCHOOL_A_ADMIN, role: 'guardian' })
+      .expect(403);
+  });
+
   it('admin discovers the seeded class/section/academic-year ids', async () => {
     const classesRes = await request(server)
       .get('/api/v1/classes')
@@ -545,6 +560,48 @@ describe('School Backend (e2e)', () => {
       });
       expect(otpRow).not.toBeNull();
       expect(otpRow?.status).toBe('sent');
+    });
+
+    it('OTP verify rejects a role the account does not hold, then a fresh code succeeds for a role it does hold', async () => {
+      // Role check runs after the code is proven valid, which consumes it —
+      // each attempt below needs its own fresh request/poll/extract round.
+      async function requestAndExtractCode(): Promise<string> {
+        await request(server)
+          .post('/api/v1/auth/otp/request')
+          .send({ phone: SCHOOL_A_TEACHER_GUARDIAN.phone })
+          .expect(200);
+        const otpRow = await pollSmsSent({
+          phone: SCHOOL_A_TEACHER_GUARDIAN.phone,
+          purpose: 'otp',
+        });
+        const full = await dbPrisma.smsMessage.findUniqueOrThrow({
+          where: { id: otpRow!.id },
+        });
+        const match = full.body.match(/\d{6}/);
+        expect(match).not.toBeNull();
+        return match![0];
+      }
+
+      const mismatchCode = await requestAndExtractCode();
+      await request(server)
+        .post('/api/v1/auth/otp/verify')
+        .send({
+          phone: SCHOOL_A_TEACHER_GUARDIAN.phone,
+          code: mismatchCode,
+          role: 'school_admin',
+        })
+        .expect(403);
+
+      const matchCode = await requestAndExtractCode();
+      const res = await request(server)
+        .post('/api/v1/auth/otp/verify')
+        .send({
+          phone: SCHOOL_A_TEACHER_GUARDIAN.phone,
+          code: matchCode,
+          role: 'guardian',
+        })
+        .expect(200);
+      expect(res.body.roles.sort()).toEqual(['guardian', 'teacher']);
     });
   });
 

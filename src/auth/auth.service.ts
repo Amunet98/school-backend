@@ -1,4 +1,9 @@
-import { Inject, Injectable, UnauthorizedException } from '@nestjs/common';
+import {
+  ForbiddenException,
+  Inject,
+  Injectable,
+  UnauthorizedException,
+} from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { JwtService, type JwtSignOptions } from '@nestjs/jwt';
 import * as argon2 from 'argon2';
@@ -43,7 +48,11 @@ export class AuthService {
     @Inject(SMS_GATEWAY) private readonly smsGateway: SmsGateway,
   ) {}
 
-  async login(phone: string, password: string): Promise<AuthTokens> {
+  async login(
+    phone: string,
+    password: string,
+    role?: UserRoleName,
+  ): Promise<AuthTokens> {
     // Phone is unique per-school, not globally, so a phone can legitimately
     // belong to accounts in more than one school. Try every active
     // candidate and return the one whose password matches.
@@ -56,6 +65,7 @@ export class AuthService {
       if (!candidate.passwordHash) continue;
       const matches = await argon2.verify(candidate.passwordHash, password);
       if (matches) {
+        this.assertHasRole(candidate, role);
         return this.issueTokensFor(candidate);
       }
     }
@@ -123,7 +133,11 @@ export class AuthService {
     }
   }
 
-  async verifyOtp(phone: string, code: string): Promise<AuthTokens> {
+  async verifyOtp(
+    phone: string,
+    code: string,
+    role?: UserRoleName,
+  ): Promise<AuthTokens> {
     const candidates = (await this.prisma.user.findMany({
       where: { phone, isActive: true },
       include: { roles: true, school: true },
@@ -134,11 +148,27 @@ export class AuthService {
     }
     const user = candidates[0];
 
+    // Check the code before the role — proving possession of the code first
+    // means a role-mismatch response can never leak "this phone has/hasn't
+    // got role X" to someone who doesn't actually have the code. The cost:
+    // a role-mismatched attempt consumes the one-time code (verify() only
+    // deletes on success), so the caller needs a fresh one to retry with
+    // the right role — acceptable MVP friction, not a security issue.
     if (!this.otp.verify(user.id, code)) {
       throw new UnauthorizedException('Invalid or expired code');
     }
+    this.assertHasRole(user, role);
 
     return this.issueTokensFor(user);
+  }
+
+  private assertHasRole(user: UserWithRoles, role?: UserRoleName): void {
+    if (!role) return;
+    if (!user.roles.some((r) => r.role === role)) {
+      throw new ForbiddenException(
+        `This account does not have "${role}" access.`,
+      );
+    }
   }
 
   private async issueTokensFor(user: UserWithRoles): Promise<AuthTokens> {
