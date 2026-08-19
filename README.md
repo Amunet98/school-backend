@@ -74,6 +74,7 @@ POST /api/v1/sections/:id/attendance     { date, records: [{ enrollment_id, stat
 
 GET  /api/v1/my/children                 (guardian)
 GET  /api/v1/children/:id/attendance?month=
+GET  /api/v1/children/notices             (guardian)
 
 GET/POST /api/v1/notices                 (school_admin, any audience)
 GET/POST /api/v1/my/notices              (teacher, own section only)
