@@ -57,3 +57,10 @@ prisma/*.db
 
 # uploads (dev only)
 /uploads
+
+# for Claude to read, not for the public repo. The repo is public; a note file
+# that is tracked is a note file that is published. Keep it a glob so a new one
+# cannot slip in under a name nobody thought to add.
+CLAUDE.md
+AGENTS.md
+*-design.md
